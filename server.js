@@ -5,85 +5,50 @@ const cors = require("cors");
 const app = express();
 app.use(cors());
 
-const BASE_URL = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY";
+// Health routes
+app.get("/", (req, res) => res.send("Server working"));
+app.get("/test", (req, res) => res.send("Test OK"));
 
-let cookies = "";
-
-// ✅ Health check routes
-app.get("/", (req, res) => {
-    res.send("Server is working");
-});
-
-app.get("/test", (req, res) => {
-    res.send("Test route working");
-});
-
-// ✅ Get fresh cookies from NSE
-async function getCookies() {
-    try {
-        const response = await axios.get("https://www.nseindia.com", {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                "Accept-Language": "en-US,en;q=0.9"
-            }
-        });
-
-        cookies = response.headers["set-cookie"]
-            .map(c => c.split(";")[0])
-            .join("; ");
-
-    } catch (err) {
-        console.error("Cookie fetch error:", err.message);
-    }
-}
-
-// ✅ Fetch NSE data with retry logic
-async function fetchData(retry = true) {
-    try {
-        if (!cookies) await getCookies();
-
-        const response = await axios.get(BASE_URL, {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                "Accept": "*/*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Referer": "https://www.nseindia.com/option-chain",
-                "Connection": "keep-alive",
-                "Cookie": cookies
-            },
-            timeout: 10000
-        });
-
-        return response.data;
-
-    } catch (err) {
-        console.error("Fetch error:", err.response?.status || err.message);
-
-        // 🔁 Retry once if blocked
-        if (retry) {
-            cookies = "";
-            await getCookies();
-            return fetchData(false);
-        }
-
-        throw err;
-    }
-}
-
-// ✅ Main API route
+// Yahoo Finance option chain
 app.get("/option-chain", async (req, res) => {
     try {
-        const data = await fetchData();
+        // NIFTY Yahoo symbol
+        const symbol = "^NSEI";
+
+        // Get expiration dates first
+        const base = await axios.get(
+            `https://query2.finance.yahoo.com/v7/finance/options/${symbol}`
+        );
+
+        const expiration = base.data.optionChain.result[0].expirationDates[0];
+
+        // Fetch option chain for nearest expiry
+        const response = await axios.get(
+            `https://query2.finance.yahoo.com/v7/finance/options/${symbol}?date=${expiration}`
+        );
+
+        const options = response.data.optionChain.result[0].options[0];
+
+        // Extract clean data
+        const data = options.calls.map((call, i) => {
+            const put = options.puts[i] || {};
+
+            return {
+                strike: call.strike,
+                callPrice: call.lastPrice,
+                putPrice: put.lastPrice,
+                callVolume: call.volume || 0,
+                putVolume: put.volume || 0
+            };
+        });
+
         res.json(data);
+
     } catch (err) {
-        res.status(500).send("Failed to fetch NSE data");
+        console.error(err.message);
+        res.status(500).send("Error fetching data");
     }
 });
 
-// ✅ Correct port for Render
 const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-    console.log("Server running on port " + PORT);
-});
+app.listen(PORT, () => console.log("Running on " + PORT));
