@@ -5,6 +5,15 @@ const cors = require("cors");
 const app = express();
 app.use(cors());
 
+// TEST ROUTE (VERY IMPORTANT)
+app.get("/", (req, res) => {
+    res.send("Server is working");
+});
+
+app.get("/test", (req, res) => {
+    res.send("Test route working");
+});
+
 const BASE_URL = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY";
 
 let cookies = "";
@@ -44,4 +53,7 @@ app.get("/option-chain", async (req, res) => {
     }
 });
 
-app.listen(3000, () => console.log("Running"));
+// IMPORTANT PORT FIX
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => console.log("Running on " + PORT));
